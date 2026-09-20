@@ -1,26 +1,264 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0d1a;
+  --surface: #0f1424;
+  --surface-2: #131830;
+  --surface-3: #1b2244;
+  --border: rgba(232, 230, 220, 0.18);
+  --border-strong: rgba(232, 230, 220, 0.36);
+  --foreground: #e8e6dc;
+  --muted: #aaa8a2;
+  --muted-2: #777982;
+  --primary: #6b8eff;
+  --primary-hover: #8aa5ff;
+  --primary-fg: #0a0d1a;
+  --success: #6b8eff;
+  --warning: #d4a83d;
+  --danger: #ff8585;
+  --paper-rule: rgba(232, 230, 220, 0.075);
+  --blueprint-tint: rgba(107, 142, 255, 0.1);
+  --blueprint-tint-strong: rgba(107, 142, 255, 0.2);
+  --overlay: rgba(3, 5, 12, 0.82);
+  --hard-shadow: 3px 3px 0 #6b8eff;
+  --hard-shadow-lg: 6px 6px 0 #6b8eff;
+
+  --phase-1: #6b8eff;
+  --phase-2: #4fd5df;
+  --phase-3: #b39aff;
+  --phase-4: #ff8bc4;
+  --phase-5: #ff8d96;
+  --phase-6: #ffad6e;
+  --phase-7: #ead068;
+  --phase-8: #6ee7b7;
+  --phase-9: #5eead4;
+  --phase-10: #aeb8ca;
+  --phase-11: #d5a2ff;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-muted: var(--muted);
+  --color-muted-2: var(--muted-2);
+  --color-primary: var(--primary);
+  --color-primary-fg: var(--primary-fg);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-body), Georgia, serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
+  --font-display: var(--font-display), ui-monospace, monospace;
+  --radius-lg: 2px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+*, *::before, *::after { box-sizing: border-box; border-color: var(--border); }
+html { scroll-behavior: smooth; color-scheme: dark; }
+body {
+  min-height: 100vh;
+  color: var(--foreground);
+  background-color: var(--background);
+  background-image:
+    radial-gradient(circle at 18% -12%, rgba(107, 142, 255, 0.14), transparent 34%),
+    radial-gradient(var(--paper-rule) 1px, transparent 1px);
+  background-size: auto, 16px 16px;
+  background-attachment: fixed;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 16px;
+  line-height: 1.58;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, .display-type {
+  font-family: var(--font-display), ui-monospace, monospace;
+  font-weight: 400;
+  line-height: 0.98;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+button, input, select, textarea { font: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+::selection { color: var(--background); background: var(--primary); }
+
+.fig-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  color: var(--primary);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.meta-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  color: var(--muted-2);
+  font-size: 0.67rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.paper-panel {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+}
+.blueprint-rule {
+  height: 4px;
+  background-image: repeating-linear-gradient(to right, var(--primary) 0 4px, transparent 4px 8px);
+}
+.hard-shadow { box-shadow: var(--hard-shadow); }
+.hard-shadow-lg { box-shadow: var(--hard-shadow-lg); }
+
+/* Explicit hierarchy used by the curriculum page. */
+.hierarchy-page {
+  font-family: var(--font-display), ui-monospace, monospace;
+  font-size: clamp(3.5rem, 7vw, 5.25rem);
+  line-height: .88;
+  letter-spacing: .025em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.hierarchy-phase {
+  font-family: var(--font-display), ui-monospace, monospace;
+  font-size: clamp(3rem, 6vw, 4.25rem);
+  line-height: .9;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.hierarchy-week {
+  font-family: var(--font-display), ui-monospace, monospace;
+  font-size: clamp(2rem, 4vw, 2.65rem);
+  line-height: .95;
+  color: var(--foreground);
+  text-transform: uppercase;
+}
+.hierarchy-topic {
+  font-family: var(--font-body), Georgia, serif;
+  font-size: 1.3rem;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  color: var(--foreground);
+  text-transform: none;
+}
+.hierarchy-subtopic {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: .76rem;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+  color: var(--foreground);
+}
+.subtopic-card {
+  position: relative;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--subtopic-accent, var(--primary));
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+.subtopic-card:hover {
+  border-color: var(--border-strong);
+  border-left-color: var(--subtopic-accent, var(--primary));
+  background: var(--blueprint-tint);
+  transform: translateX(1px);
+}
+.subtopic-summary {
+  margin-top: .35rem;
+  max-width: 68ch;
+  font-family: var(--font-body), Georgia, serif;
+  font-size: .9rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.detail-block {
+  border-left: 1px solid var(--border-strong);
+  padding-left: .75rem;
+}
+
+/* Inputs */
+.input, .textarea, .select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--surface-2);
+  color: var(--foreground);
+  padding: 0.6rem 0.75rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.78rem;
+  outline: none;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+.input:hover, .textarea:hover, .select:hover { border-color: var(--border-strong); }
+.input:focus, .textarea:focus, .select:focus {
+  border-color: var(--primary);
+  background: var(--surface);
+  box-shadow: none;
+}
+.input::placeholder, .textarea::placeholder { color: var(--muted-2); }
+.textarea { min-height: 96px; resize: vertical; }
+input[type="checkbox"] { accent-color: var(--primary); }
+
+/* Modal / sheet */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--overlay);
+  backdrop-filter: blur(3px);
+  animation: backdrop-in 160ms ease-out;
+}
+.modal-panel {
+  width: min(680px, 100%);
+  max-height: min(840px, calc(100vh - 48px));
+  overflow: auto;
+  border: 1px solid var(--foreground);
+  background: var(--background);
+  box-shadow: var(--hard-shadow-lg);
+  animation: panel-in 220ms cubic-bezier(.23,1,.32,1);
+}
+@keyframes backdrop-in { from { opacity: 0; } }
+@keyframes panel-in { from { opacity: 0; transform: translateY(12px) scale(.99); } }
+@keyframes fade-in { from { opacity: 0; transform: translateY(4px); } }
+.animate-fade-in { animation: fade-in 180ms ease-out; }
+
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--border); }
+
+@media (max-width: 640px) {
+  /* Heavier weights across the whole UI for legibility on small, dark screens */
+  body { font-size: 15px; font-weight: 500; }
+  p, li, span, a, dd, dt, label, blockquote, figcaption { font-weight: 500; }
+  .text-muted, .text-muted-2, [class*="text-muted"] { font-weight: 500; }
+  .meta-label, .fig-label { font-weight: 700; }
+  .subtopic-summary { font-weight: 500; }
+  .detail-block p, .detail-block li { font-weight: 500; }
+  .hierarchy-subtopic { font-weight: 800; }
+  .font-mono { font-weight: 600; }
+  strong, b { font-weight: 800; }
+  .modal-backdrop { align-items: end; padding: 0; }
+  .modal-panel {
+    width: 100%;
+    max-height: calc(100vh - 48px);
+    border-right: 0;
+    border-left: 0;
+    border-bottom: 0;
+    box-shadow: none;
   }
 }
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; }
 }
