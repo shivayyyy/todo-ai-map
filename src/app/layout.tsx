@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Source_Serif_4, VT323 } from "next/font/google";
 import { PWARegister } from "@/components/pwa-register";
+import { InstallPrompt } from "@/components/install-prompt";
 import "./globals.css";
 
 const body = Source_Serif_4({
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-full flex-col">
         {children}
         <PWARegister />
+        <InstallPrompt />
       </body>
     </html>
   );
