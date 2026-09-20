@@ -16,7 +16,14 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { addRoadmapTodos, addTodo, deleteTodo, updateTodo } from "@/lib/actions";
+import {
+  addRoadmapTodos,
+  addTodo,
+  deleteTodo,
+  getSubtopicDetail,
+  updateTodo,
+  type SubtopicDetail,
+} from "@/lib/actions";
 import type { QuickAddData, TodoLessonOption } from "@/lib/queries";
 import { Badge, Card } from "@/components/ui";
 import { cn, todayISO } from "@/lib/utils";
@@ -68,6 +75,7 @@ export function TodoBoard({
   const [view] = useState<View>("list");
   const [composerOpen, setComposerOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [viewingLessonId, setViewingLessonId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   function create(data: Draft) {
@@ -184,7 +192,13 @@ export function TodoBoard({
 
       <div className="mt-8">
         {view === "list" && (
-          <ListView todos={todos} onStatus={setStatus} onPatch={patch} onRemove={remove} />
+          <ListView
+            todos={todos}
+            onStatus={setStatus}
+            onPatch={patch}
+            onRemove={remove}
+            onOpenLesson={setViewingLessonId}
+          />
         )}
         {view === "board" && (
           <BoardView todos={todos} onStatus={setStatus} onRemove={remove} />
@@ -193,6 +207,13 @@ export function TodoBoard({
           <CalendarView todos={todos} onStatus={setStatus} />
         )}
       </div>
+
+      {viewingLessonId && (
+        <LessonDetailModal
+          subtopicId={viewingLessonId}
+          onClose={() => setViewingLessonId(null)}
+        />
+      )}
 
       {composerOpen && (
         <TodoComposer
@@ -595,6 +616,174 @@ function TodoComposer({
   );
 }
 
+function LessonDetailModal({
+  subtopicId,
+  onClose,
+}: {
+  subtopicId: string;
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = useState<SubtopicDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await getSubtopicDetail(subtopicId);
+        if (!cancelled) setDetail(data);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Could not load lesson");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [subtopicId, onClose]);
+
+  const statusLabel: Record<string, string> = {
+    not_started: "Not started",
+    in_progress: "In progress",
+    done: "Done",
+  };
+
+  return (
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="lesson-detail-title">
+        <header className="flex items-start justify-between gap-3 border-b border-border px-5 py-5 sm:px-7">
+          <div className="min-w-0">
+            <p className="fig-label">FIG_005 · LESSON DETAIL</p>
+            <h2 id="lesson-detail-title" className="mt-2 text-2xl font-semibold sm:text-3xl">
+              {detail?.title ?? (loading ? "Loading…" : "Lesson")}
+            </h2>
+            {detail && (
+              <p className="mt-1 font-mono text-[0.6rem] uppercase tracking-wider text-muted-2">
+                Phase {String(detail.phaseOrder).padStart(2, "0")} · Week {detail.weekNumber} · {detail.topicTitle}
+                {detail.estMinutes > 0 ? ` · ${detail.estMinutes} min` : ""}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close lesson"
+            className="flex h-10 w-10 shrink-0 items-center justify-center border border-border text-muted hover:border-primary hover:text-primary"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+
+        <div className="max-h-[68vh] overflow-y-auto px-5 py-5 sm:px-7">
+          {loading && <p className="text-sm text-muted">Loading lesson…</p>}
+          {error && !loading && <p className="text-sm text-danger">{error}</p>}
+          {!loading && !error && !detail && (
+            <p className="text-sm text-muted">This lesson could not be found.</p>
+          )}
+          {detail && (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge color={detail.tier === "core" ? "var(--primary)" : undefined}>{detail.tier}</Badge>
+                <Badge>{statusLabel[detail.status] ?? detail.status}</Badge>
+              </div>
+
+              <p className="text-base leading-relaxed text-foreground">{detail.explanation}</p>
+
+              {detail.whyItMatters && (
+                <LessonField label="Why it matters">{detail.whyItMatters}</LessonField>
+              )}
+
+              {detail.prerequisites && detail.prerequisites.length > 0 && (
+                <LessonField label="Prerequisites">
+                  {detail.prerequisites.join(" · ")}
+                </LessonField>
+              )}
+
+              {detail.learningOutcomes && detail.learningOutcomes.length > 0 && (
+                <div>
+                  <p className="meta-label">You will learn</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-muted">
+                    {detail.learningOutcomes.map((o, i) => <li key={i}>{o}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {detail.practicalTask && (
+                <LessonField label="Practical task">{detail.practicalTask}</LessonField>
+              )}
+
+              {detail.doneWhen && detail.doneWhen.length > 0 && (
+                <div>
+                  <p className="meta-label">Done when</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-muted">
+                    {detail.doneWhen.map((o, i) => <li key={i}>{o}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {detail.chosenResource && (
+                <div className="border border-border bg-surface-2/60 p-3">
+                  <p className="meta-label">Your chosen resource</p>
+                  <a
+                    href={detail.chosenResource.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 block text-sm font-semibold text-primary hover:underline"
+                  >
+                    {detail.chosenResource.title}
+                  </a>
+                  <p className="mt-0.5 font-mono text-[0.58rem] uppercase tracking-wider text-muted-2">
+                    {detail.chosenResource.provider ?? "—"} · {detail.chosenResource.type} · {detail.chosenResource.language}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4 sm:px-7">
+          <p className="font-mono text-[0.6rem] uppercase tracking-wider text-muted-2">
+            Manage resources and evidence from the plan page
+          </p>
+          {detail && (
+            <a
+              href={`/plan?phase=${detail.phaseSlug}`}
+              className="inline-flex h-9 items-center border border-primary bg-primary px-4 font-mono text-[0.65rem] uppercase tracking-wider text-primary-fg hover:bg-[var(--primary-hover)]"
+            >
+              Open in plan
+            </a>
+          )}
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function LessonField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <p className="meta-label">{label}</p>
+      <p className="mt-1 text-sm leading-relaxed text-muted">{children}</p>
+    </div>
+  );
+}
+
 function ModeButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
     <button type="button" onClick={onClick} className={cn("flex items-center justify-center gap-2 px-3 py-3 font-mono text-[0.67rem] uppercase tracking-wider first:border-r first:border-border", active ? "bg-primary text-primary-fg" : "bg-surface text-muted hover:text-primary")}>
@@ -620,7 +809,7 @@ function bucketOf(dueDate: string | null): string {
 
 const BUCKET_ORDER = ["Overdue", "Today", "Next 7 days", "Later", "Unscheduled"];
 
-function ListView({ todos, onStatus, onPatch, onRemove }: { todos: TodoItem[]; onStatus: (id: string, status: string) => void; onPatch: (id: string, patch: Partial<TodoItem>) => void; onRemove: (id: string) => void }) {
+function ListView({ todos, onStatus, onPatch, onRemove, onOpenLesson }: { todos: TodoItem[]; onStatus: (id: string, status: string) => void; onPatch: (id: string, patch: Partial<TodoItem>) => void; onRemove: (id: string) => void; onOpenLesson: (subtopicId: string) => void }) {
   const open = todos.filter((todo) => todo.status !== "done");
   const done = todos.filter((todo) => todo.status === "done");
   const groups = useMemo(() => {
@@ -647,7 +836,16 @@ function ListView({ todos, onStatus, onPatch, onRemove }: { todos: TodoItem[]; o
             <span className="font-mono text-[0.62rem] text-muted-2">{groups[bucket].length} item{groups[bucket].length > 1 ? "s" : ""}</span>
           </div>
           <div>
-            {groups[bucket].map((todo) => <TodoRow key={todo.id} todo={todo} onStatus={onStatus} onPatch={onPatch} onRemove={onRemove} />)}
+            {groups[bucket].map((todo) => (
+              <TodoRow
+                key={todo.id}
+                todo={todo}
+                onStatus={onStatus}
+                onPatch={onPatch}
+                onRemove={onRemove}
+                onOpenLesson={onOpenLesson}
+              />
+            ))}
           </div>
         </section>
       ))}
@@ -655,7 +853,16 @@ function ListView({ todos, onStatus, onPatch, onRemove }: { todos: TodoItem[]; o
         <details className="border-t border-border pt-4">
           <summary className="cursor-pointer font-mono text-[0.65rem] uppercase tracking-wider text-muted-2 hover:text-primary">Completed · {done.length}</summary>
           <div className="mt-3 opacity-70">
-            {done.map((todo) => <TodoRow key={todo.id} todo={todo} onStatus={onStatus} onPatch={onPatch} onRemove={onRemove} />)}
+            {done.map((todo) => (
+              <TodoRow
+                key={todo.id}
+                todo={todo}
+                onStatus={onStatus}
+                onPatch={onPatch}
+                onRemove={onRemove}
+                onOpenLesson={onOpenLesson}
+              />
+            ))}
           </div>
         </details>
       )}
@@ -663,8 +870,11 @@ function ListView({ todos, onStatus, onPatch, onRemove }: { todos: TodoItem[]; o
   );
 }
 
-function TodoRow({ todo, onStatus, onPatch, onRemove }: { todo: TodoItem; onStatus: (id: string, status: string) => void; onPatch: (id: string, patch: Partial<TodoItem>) => void; onRemove: (id: string) => void }) {
-  const isLesson = todo.linkedType === "subtopic";
+function TodoRow({ todo, onStatus, onPatch, onRemove, onOpenLesson }: { todo: TodoItem; onStatus: (id: string, status: string) => void; onPatch: (id: string, patch: Partial<TodoItem>) => void; onRemove: (id: string) => void; onOpenLesson: (subtopicId: string) => void }) {
+  const isLesson = todo.linkedType === "subtopic" && Boolean(todo.linkedId);
+  const openLesson = () => {
+    if (isLesson && todo.linkedId) onOpenLesson(todo.linkedId);
+  };
   return (
     <article className="group grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-border bg-[rgba(15,20,36,.7)] px-2 py-4 transition-colors hover:bg-[var(--blueprint-tint)] sm:px-3">
       <button onClick={() => onStatus(todo.id, todo.status === "done" ? "todo" : "done")} aria-label={todo.status === "done" ? "Mark incomplete" : "Mark complete"} className={cn("flex h-6 w-6 items-center justify-center border", todo.status === "done" ? "border-primary bg-primary text-primary-fg" : "border-muted-2 bg-background hover:border-primary")}>
@@ -672,8 +882,31 @@ function TodoRow({ todo, onStatus, onPatch, onRemove }: { todo: TodoItem; onStat
       </button>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h4 className={cn("text-lg text-foreground", todo.status === "done" && "line-through opacity-60")}>{todo.title}</h4>
-          {isLesson && <Badge color="var(--primary)">Lesson</Badge>}
+          {isLesson ? (
+            <button
+              type="button"
+              onClick={openLesson}
+              className={cn(
+                "text-left text-lg text-foreground transition-colors hover:text-primary hover:underline",
+                todo.status === "done" && "line-through opacity-60",
+              )}
+              title="View lesson details"
+            >
+              {todo.title}
+            </button>
+          ) : (
+            <h4 className={cn("text-lg text-foreground", todo.status === "done" && "line-through opacity-60")}>{todo.title}</h4>
+          )}
+          {isLesson && (
+            <button
+              type="button"
+              onClick={openLesson}
+              className="inline-flex items-center gap-1 border border-primary/60 bg-[var(--blueprint-tint)] px-2 py-0.5 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-primary hover:border-primary hover:bg-primary hover:text-primary-fg"
+              aria-label="Open lesson details"
+            >
+              <BookOpen className="h-3 w-3" /> View lesson
+            </button>
+          )}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[0.6rem] uppercase tracking-wider text-muted-2">
           <span className="flex items-center gap-1"><span className="h-1.5 w-1.5" style={{ background: priorityColor[todo.priority] }} />{todo.priority}</span>

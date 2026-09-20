@@ -169,8 +169,24 @@ export function SubtopicItem({
     }
   }
 
-  function addToTodo() {
+  const [pickingDay, setPickingDay] = useState(false);
+  const [chosenDay, setChosenDay] = useState<"today" | "tomorrow">("tomorrow");
+  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
+
+  function localISO(offsetDays: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function commitAddTodo() {
+    const dueDate = localISO(chosenDay === "today" ? 0 : 1);
     setAddedTodo(true);
+    setPickingDay(false);
+    setScheduledFor(chosenDay);
     startTransition(async () => {
       await addTodo({
         title: sub.title,
@@ -179,6 +195,7 @@ export function SubtopicItem({
         estMinutes: sub.estMinutes || undefined,
         linkedType: "subtopic",
         linkedId: sub.id,
+        dueDate,
       });
     });
   }
@@ -371,10 +388,70 @@ export function SubtopicItem({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="subtle" onClick={addToTodo} disabled={addedTodo}>
-                  {addedTodo ? "Added to Todo ✓" : "Add to Todo"}
-                </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {addedTodo ? (
+                  <Button size="sm" variant="subtle" disabled>
+                    Added for {scheduledFor === "today" ? "today" : "tomorrow"} ✓
+                  </Button>
+                ) : !pickingDay ? (
+                  <Button
+                    size="sm"
+                    variant="subtle"
+                    onClick={() => {
+                      setChosenDay("tomorrow");
+                      setPickingDay(true);
+                    }}
+                  >
+                    Add to Todo
+                  </Button>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2 border border-border bg-surface-2/70 px-2 py-1">
+                    <span className="font-mono text-[0.58rem] uppercase tracking-wider text-muted-2">
+                      Schedule
+                    </span>
+                    <div className="flex overflow-hidden rounded border border-border">
+                      <button
+                        type="button"
+                        onClick={() => setChosenDay("today")}
+                        aria-pressed={chosenDay === "today"}
+                        className={cn(
+                          "px-2 py-1 text-[11px] font-medium transition-colors",
+                          chosenDay === "today"
+                            ? "bg-primary text-primary-fg"
+                            : "text-muted hover:text-foreground",
+                        )}
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setChosenDay("tomorrow")}
+                        aria-pressed={chosenDay === "tomorrow"}
+                        className={cn(
+                          "border-l border-border px-2 py-1 text-[11px] font-medium transition-colors",
+                          chosenDay === "tomorrow"
+                            ? "bg-primary text-primary-fg"
+                            : "text-muted hover:text-foreground",
+                        )}
+                      >
+                        Tomorrow
+                      </button>
+                    </div>
+                    <Button size="sm" variant="subtle" onClick={commitAddTodo}>
+                      Add
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => setPickingDay(false)}
+                      aria-label="Cancel scheduling"
+                      className="rounded-md p-1 text-muted-2 hover:text-foreground"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
                 <Button size="sm" variant="ghost" onClick={cycleStatus}>
                   Mark {STATUS_NEXT[status].replace("_", " ")}
                 </Button>

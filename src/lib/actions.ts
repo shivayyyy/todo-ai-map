@@ -118,6 +118,133 @@ export async function saveSubtopicNotes(
 /* Resource selection + on-demand loading                              */
 /* ------------------------------------------------------------------ */
 
+export type SubtopicDetail = {
+  id: string;
+  title: string;
+  explanation: string;
+  whyItMatters: string | null;
+  prerequisites: string[] | null;
+  learningOutcomes: string[] | null;
+  practicalTask: string | null;
+  doneWhen: string[] | null;
+  estMinutes: number;
+  tier: string;
+  status: string;
+  topicTitle: string;
+  weekNumber: number;
+  phaseTitle: string;
+  phaseSlug: string;
+  phaseOrder: number;
+  chosenResource: {
+    id: string;
+    title: string;
+    url: string;
+    provider: string | null;
+    type: string;
+    language: string;
+  } | null;
+};
+
+/**
+ * Fetch everything the Todo view needs to render a lesson detail modal that
+ * mirrors the plan-page subtopic display. Read-only for the caller; status
+ * changes still flow through setSubtopicStatus or the linked todo.
+ */
+export async function getSubtopicDetail(
+  subtopicId: string,
+): Promise<SubtopicDetail | null> {
+  const userId = await uid();
+  const sid = z.string().min(1).parse(subtopicId);
+
+  const rows = await db
+    .select({
+      subId: schema.subtopics.id,
+      subTitle: schema.subtopics.title,
+      explanation: schema.subtopics.explanation,
+      whyItMatters: schema.subtopics.whyItMatters,
+      prerequisites: schema.subtopics.prerequisites,
+      learningOutcomes: schema.subtopics.learningOutcomes,
+      practicalTask: schema.subtopics.practicalTask,
+      doneWhen: schema.subtopics.doneWhen,
+      estMinutes: schema.subtopics.estMinutes,
+      tier: schema.subtopics.tier,
+      topicTitle: schema.topics.title,
+      weekNumber: schema.weeks.weekNumber,
+      phaseTitle: schema.phases.title,
+      phaseSlug: schema.phases.slug,
+      phaseOrder: schema.phases.order,
+    })
+    .from(schema.subtopics)
+    .innerJoin(schema.topics, eq(schema.subtopics.topicId, schema.topics.id))
+    .innerJoin(schema.weeks, eq(schema.topics.weekId, schema.weeks.id))
+    .innerJoin(schema.phases, eq(schema.topics.phaseId, schema.phases.id))
+    .where(eq(schema.subtopics.id, sid))
+    .limit(1);
+  if (!rows[0]) return null;
+  const r = rows[0];
+
+  const [progress] = await db
+    .select()
+    .from(schema.subtopicProgress)
+    .where(
+      and(
+        eq(schema.subtopicProgress.userId, userId),
+        eq(schema.subtopicProgress.subtopicId, sid),
+      ),
+    )
+    .limit(1);
+
+  const [selection] = await db
+    .select()
+    .from(schema.resourceSelections)
+    .where(
+      and(
+        eq(schema.resourceSelections.userId, userId),
+        eq(schema.resourceSelections.subtopicId, sid),
+      ),
+    )
+    .limit(1);
+
+  let chosenResource: SubtopicDetail["chosenResource"] = null;
+  if (selection?.resourceId) {
+    const [res] = await db
+      .select()
+      .from(schema.resources)
+      .where(eq(schema.resources.id, selection.resourceId))
+      .limit(1);
+    if (res) {
+      chosenResource = {
+        id: res.id,
+        title: res.title,
+        url: res.url,
+        provider: res.provider,
+        type: res.type,
+        language: res.language,
+      };
+    }
+  }
+
+  return {
+    id: r.subId,
+    title: r.subTitle,
+    explanation: r.explanation,
+    whyItMatters: r.whyItMatters,
+    prerequisites: r.prerequisites,
+    learningOutcomes: r.learningOutcomes,
+    practicalTask: r.practicalTask,
+    doneWhen: r.doneWhen,
+    estMinutes: r.estMinutes,
+    tier: r.tier,
+    status: progress?.status ?? "not_started",
+    topicTitle: r.topicTitle,
+    weekNumber: r.weekNumber,
+    phaseTitle: r.phaseTitle,
+    phaseSlug: r.phaseSlug,
+    phaseOrder: r.phaseOrder,
+    chosenResource,
+  };
+}
+
 export async function loadSubtopicResources(subtopicId: string) {
   const userId = await uid();
   const id = z.string().min(1).parse(subtopicId);
