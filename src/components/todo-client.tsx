@@ -20,12 +20,17 @@ import {
   addRoadmapTodos,
   addTodo,
   deleteTodo,
+  getProjectDetail,
   getSubtopicDetail,
+  saveProjectLinks,
+  toggleMilestone,
   updateTodo,
+  type ProjectDetail,
   type SubtopicDetail,
 } from "@/lib/actions";
 import type { QuickAddData, TodoLessonOption } from "@/lib/queries";
 import { Badge, Card } from "@/components/ui";
+import { ResourcePicker } from "@/components/resource-picker";
 import { cn, todayISO } from "@/lib/utils";
 
 export type TodoItem = {
@@ -75,7 +80,9 @@ export function TodoBoard({
   const [view] = useState<View>("list");
   const [composerOpen, setComposerOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
-  const [viewingLessonId, setViewingLessonId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<
+    { type: "subtopic" | "project"; id: string } | null
+  >(null);
   const [, startTransition] = useTransition();
 
   function create(data: Draft) {
@@ -197,7 +204,7 @@ export function TodoBoard({
             onStatus={setStatus}
             onPatch={patch}
             onRemove={remove}
-            onOpenLesson={setViewingLessonId}
+            onOpenLink={(type, id) => setViewing({ type, id })}
           />
         )}
         {view === "board" && (
@@ -208,10 +215,16 @@ export function TodoBoard({
         )}
       </div>
 
-      {viewingLessonId && (
+      {viewing?.type === "subtopic" && (
         <LessonDetailModal
-          subtopicId={viewingLessonId}
-          onClose={() => setViewingLessonId(null)}
+          subtopicId={viewing.id}
+          onClose={() => setViewing(null)}
+        />
+      )}
+      {viewing?.type === "project" && (
+        <ProjectDetailModal
+          projectId={viewing.id}
+          onClose={() => setViewing(null)}
         />
       )}
 
@@ -731,22 +744,16 @@ function LessonDetailModal({
                 </div>
               )}
 
-              {detail.chosenResource && (
-                <div className="border border-border bg-surface-2/60 p-3">
-                  <p className="meta-label">Your chosen resource</p>
-                  <a
-                    href={detail.chosenResource.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-1 block text-sm font-semibold text-primary hover:underline"
-                  >
-                    {detail.chosenResource.title}
-                  </a>
-                  <p className="mt-0.5 font-mono text-[0.58rem] uppercase tracking-wider text-muted-2">
-                    {detail.chosenResource.provider ?? "—"} · {detail.chosenResource.type} · {detail.chosenResource.language}
-                  </p>
+              <div>
+                <p className="meta-label">Resources</p>
+                <div className="mt-2">
+                  <ResourcePicker
+                    subtopicId={detail.id}
+                    initialChosenId={detail.chosenResource?.id ?? null}
+                    autoLoad
+                  />
                 </div>
-              )}
+              </div>
             </div>
           )}
         </div>
@@ -784,6 +791,237 @@ function LessonField({
   );
 }
 
+function ProjectDetailModal({
+  projectId,
+  onClose,
+}: {
+  projectId: string;
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = useState<ProjectDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [repo, setRepo] = useState("");
+  const [demo, setDemo] = useState("");
+  const [savingLinks, setSavingLinks] = useState(false);
+  const [linksSaved, setLinksSaved] = useState(false);
+  const [milestones, setMilestones] = useState<ProjectDetail["milestones"]>([]);
+  const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await getProjectDetail(projectId);
+        if (cancelled) return;
+        setDetail(data);
+        if (data) {
+          setRepo(data.repoUrl ?? "");
+          setDemo(data.demoUrl ?? "");
+          setMilestones(data.milestones);
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Could not load project");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [projectId, onClose]);
+
+  function saveLinks() {
+    setSavingLinks(true);
+    startTransition(async () => {
+      try {
+        await saveProjectLinks(projectId, repo, demo);
+        setLinksSaved(true);
+        window.setTimeout(() => setLinksSaved(false), 1600);
+      } finally {
+        setSavingLinks(false);
+      }
+    });
+  }
+
+  function toggle(id: string, done: boolean) {
+    setMilestones((ms) => ms.map((m) => (m.id === id ? { ...m, done } : m)));
+    startTransition(() => toggleMilestone(id, done));
+  }
+
+  const doneCount = milestones.filter((m) => m.done).length;
+
+  return (
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-detail-title">
+        <header className="flex items-start justify-between gap-3 border-b border-border px-5 py-5 sm:px-7">
+          <div className="min-w-0">
+            <p className="fig-label">FIG_006 · PROJECT DETAIL</p>
+            <h2 id="project-detail-title" className="mt-2 text-2xl font-semibold sm:text-3xl">
+              {detail?.title ?? (loading ? "Loading…" : "Project")}
+            </h2>
+            {detail && (
+              <p className="mt-1 font-mono text-[0.6rem] uppercase tracking-wider text-muted-2">
+                Phase {String(detail.phaseOrder).padStart(2, "0")} · {detail.phaseTitle}
+                {" · "}
+                {detail.kind === "phase-capstone" ? "Cumulative" : "Portfolio"}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close project"
+            className="flex h-10 w-10 shrink-0 items-center justify-center border border-border text-muted hover:border-primary hover:text-primary"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+
+        <div className="max-h-[68vh] overflow-y-auto px-5 py-5 sm:px-7">
+          {loading && <p className="text-sm text-muted">Loading project…</p>}
+          {error && !loading && <p className="text-sm text-danger">{error}</p>}
+          {!loading && !error && !detail && (
+            <p className="text-sm text-muted">This project could not be found.</p>
+          )}
+          {detail && (
+            <div className="space-y-5">
+              <div>
+                <p className="meta-label">Save your work</p>
+                <p className="mt-1 text-xs text-muted">
+                  Paste the repo and live/recorded demo URLs. They&apos;re stored with the project and show up on the plan too.
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="meta-label">Repo URL</span>
+                    <input
+                      className="input mt-1"
+                      placeholder="https://github.com/you/project"
+                      value={repo}
+                      onChange={(e) => setRepo(e.target.value)}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="meta-label">Demo URL</span>
+                    <input
+                      className="input mt-1"
+                      placeholder="https://your-demo.example / asciinema.org/…"
+                      value={demo}
+                      onChange={(e) => setDemo(e.target.value)}
+                    />
+                  </label>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={saveLinks}
+                    disabled={savingLinks}
+                    className="inline-flex h-9 items-center border border-primary bg-primary px-4 font-mono text-[0.65rem] uppercase tracking-wider text-primary-fg hover:bg-[var(--primary-hover)] disabled:opacity-50"
+                  >
+                    {savingLinks ? "Saving…" : linksSaved ? "Saved ✓" : "Save links"}
+                  </button>
+                  {(repo || demo) && !savingLinks && !linksSaved && (
+                    <span className="font-mono text-[0.58rem] uppercase tracking-wider text-muted-2">
+                      Unsaved changes
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <p className="meta-label">Problem</p>
+                <p className="mt-1 text-sm leading-relaxed">{detail.problem}</p>
+              </div>
+
+              {detail.beginnerBrief && (
+                <LessonField label="New to this?">{detail.beginnerBrief}</LessonField>
+              )}
+
+              {detail.approach && detail.approach.length > 0 && (
+                <div>
+                  <p className="meta-label">How to approach it</p>
+                  <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm text-muted">
+                    {detail.approach.map((step, i) => <li key={i}>{step}</li>)}
+                  </ol>
+                </div>
+              )}
+
+              {detail.learningGoal && (
+                <LessonField label="What it teaches you">{detail.learningGoal}</LessonField>
+              )}
+
+              <LessonField label="Why it's useful">{detail.whyUseful}</LessonField>
+              <LessonField label="Proves">{detail.proves}</LessonField>
+
+              {detail.features.length > 0 && (
+                <div>
+                  <p className="meta-label">Features to build</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-muted">
+                    {detail.features.map((f, i) => <li key={i}>{f}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {detail.shipping && detail.shipping.length > 0 && (
+                <div>
+                  <p className="meta-label">How to ship it</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-muted">
+                    {detail.shipping.map((s, i) => <li key={i}>{s}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {milestones.length > 0 && (
+                <div>
+                  <p className="meta-label">Milestones · {doneCount}/{milestones.length}</p>
+                  <div className="mt-2 space-y-1">
+                    {milestones.map((m) => (
+                      <label key={m.id} className="flex cursor-pointer items-start gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={m.done}
+                          onChange={(e) => toggle(m.id, e.target.checked)}
+                          className="mt-1"
+                        />
+                        <span className={cn(m.done && "text-muted line-through")}>
+                          <span className="font-medium text-foreground">{m.title}.</span>{" "}
+                          <span className="text-muted">{m.description}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4 sm:px-7">
+          <p className="font-mono text-[0.6rem] uppercase tracking-wider text-muted-2">
+            Marking this todo done also marks the project done
+          </p>
+          {detail && (
+            <a
+              href={`/plan?phase=${detail.phaseSlug}`}
+              className="inline-flex h-9 items-center border border-primary bg-primary px-4 font-mono text-[0.65rem] uppercase tracking-wider text-primary-fg hover:bg-[var(--primary-hover)]"
+            >
+              Open in plan
+            </a>
+          )}
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 function ModeButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
     <button type="button" onClick={onClick} className={cn("flex items-center justify-center gap-2 px-3 py-3 font-mono text-[0.67rem] uppercase tracking-wider first:border-r first:border-border", active ? "bg-primary text-primary-fg" : "bg-surface text-muted hover:text-primary")}>
@@ -809,7 +1047,7 @@ function bucketOf(dueDate: string | null): string {
 
 const BUCKET_ORDER = ["Overdue", "Today", "Next 7 days", "Later", "Unscheduled"];
 
-function ListView({ todos, onStatus, onPatch, onRemove, onOpenLesson }: { todos: TodoItem[]; onStatus: (id: string, status: string) => void; onPatch: (id: string, patch: Partial<TodoItem>) => void; onRemove: (id: string) => void; onOpenLesson: (subtopicId: string) => void }) {
+function ListView({ todos, onStatus, onPatch, onRemove, onOpenLink }: { todos: TodoItem[]; onStatus: (id: string, status: string) => void; onPatch: (id: string, patch: Partial<TodoItem>) => void; onRemove: (id: string) => void; onOpenLink: (type: "subtopic" | "project", id: string) => void }) {
   const open = todos.filter((todo) => todo.status !== "done");
   const done = todos.filter((todo) => todo.status === "done");
   const groups = useMemo(() => {
@@ -843,7 +1081,7 @@ function ListView({ todos, onStatus, onPatch, onRemove, onOpenLesson }: { todos:
                 onStatus={onStatus}
                 onPatch={onPatch}
                 onRemove={onRemove}
-                onOpenLesson={onOpenLesson}
+                onOpenLink={onOpenLink}
               />
             ))}
           </div>
@@ -860,7 +1098,7 @@ function ListView({ todos, onStatus, onPatch, onRemove, onOpenLesson }: { todos:
                 onStatus={onStatus}
                 onPatch={onPatch}
                 onRemove={onRemove}
-                onOpenLesson={onOpenLesson}
+                onOpenLink={onOpenLink}
               />
             ))}
           </div>
@@ -870,10 +1108,14 @@ function ListView({ todos, onStatus, onPatch, onRemove, onOpenLesson }: { todos:
   );
 }
 
-function TodoRow({ todo, onStatus, onPatch, onRemove, onOpenLesson }: { todo: TodoItem; onStatus: (id: string, status: string) => void; onPatch: (id: string, patch: Partial<TodoItem>) => void; onRemove: (id: string) => void; onOpenLesson: (subtopicId: string) => void }) {
+function TodoRow({ todo, onStatus, onPatch, onRemove, onOpenLink }: { todo: TodoItem; onStatus: (id: string, status: string) => void; onPatch: (id: string, patch: Partial<TodoItem>) => void; onRemove: (id: string) => void; onOpenLink: (type: "subtopic" | "project", id: string) => void }) {
   const isLesson = todo.linkedType === "subtopic" && Boolean(todo.linkedId);
-  const openLesson = () => {
-    if (isLesson && todo.linkedId) onOpenLesson(todo.linkedId);
+  const isProject = todo.linkedType === "project" && Boolean(todo.linkedId);
+  const linked = isLesson || isProject;
+  const openLink = () => {
+    if (!todo.linkedId) return;
+    if (isLesson) onOpenLink("subtopic", todo.linkedId);
+    else if (isProject) onOpenLink("project", todo.linkedId);
   };
   return (
     <article className="group grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-border bg-[rgba(15,20,36,.7)] px-2 py-4 transition-colors hover:bg-[var(--blueprint-tint)] sm:px-3">
@@ -882,15 +1124,15 @@ function TodoRow({ todo, onStatus, onPatch, onRemove, onOpenLesson }: { todo: To
       </button>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          {isLesson ? (
+          {linked ? (
             <button
               type="button"
-              onClick={openLesson}
+              onClick={openLink}
               className={cn(
                 "text-left text-lg text-foreground transition-colors hover:text-primary hover:underline",
                 todo.status === "done" && "line-through opacity-60",
               )}
-              title="View lesson details"
+              title={isLesson ? "View lesson details" : "View project details"}
             >
               {todo.title}
             </button>
@@ -900,11 +1142,21 @@ function TodoRow({ todo, onStatus, onPatch, onRemove, onOpenLesson }: { todo: To
           {isLesson && (
             <button
               type="button"
-              onClick={openLesson}
+              onClick={openLink}
               className="inline-flex items-center gap-1 border border-primary/60 bg-[var(--blueprint-tint)] px-2 py-0.5 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-primary hover:border-primary hover:bg-primary hover:text-primary-fg"
               aria-label="Open lesson details"
             >
               <BookOpen className="h-3 w-3" /> View lesson
+            </button>
+          )}
+          {isProject && (
+            <button
+              type="button"
+              onClick={openLink}
+              className="inline-flex items-center gap-1 border border-[var(--phase-6)]/60 bg-[var(--blueprint-tint)] px-2 py-0.5 font-mono text-[0.58rem] uppercase tracking-[0.08em] text-[var(--phase-6)] hover:border-[var(--phase-6)] hover:bg-[var(--phase-6)] hover:text-primary-fg"
+              aria-label="Open project details"
+            >
+              <Sparkles className="h-3 w-3" /> View project
             </button>
           )}
         </div>

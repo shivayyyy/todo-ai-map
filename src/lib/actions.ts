@@ -1,7 +1,7 @@
 "use server";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, asc, eq, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "./db";
 import { requireUser } from "./dal";
@@ -242,6 +242,123 @@ export async function getSubtopicDetail(
     phaseSlug: r.phaseSlug,
     phaseOrder: r.phaseOrder,
     chosenResource,
+  };
+}
+
+export type ProjectDetail = {
+  id: string;
+  number: number;
+  kind: string;
+  title: string;
+  problem: string;
+  whyUseful: string;
+  learningGoal: string | null;
+  intuitionFocus: string | null;
+  approach: string[] | null;
+  features: string[];
+  ideas: string[];
+  shipping: string[] | null;
+  proves: string;
+  beginnerBrief: string | null;
+  phaseTitle: string;
+  phaseSlug: string;
+  phaseOrder: number;
+  status: string;
+  repoUrl: string | null;
+  demoUrl: string | null;
+  milestones: { id: string; title: string; description: string; done: boolean }[];
+};
+
+/**
+ * Fetch a project plus the current user's progress, saved repo/demo URLs, and
+ * milestone completion. Used by the todo detail modal so users can view and
+ * update project evidence without leaving the todo page.
+ */
+export async function getProjectDetail(
+  projectId: string,
+): Promise<ProjectDetail | null> {
+  const userId = await uid();
+  const pid = z.string().min(1).parse(projectId);
+
+  const rows = await db
+    .select({
+      id: schema.projects.id,
+      number: schema.projects.number,
+      kind: schema.projects.kind,
+      title: schema.projects.title,
+      problem: schema.projects.problem,
+      whyUseful: schema.projects.whyUseful,
+      learningGoal: schema.projects.learningGoal,
+      intuitionFocus: schema.projects.intuitionFocus,
+      approach: schema.projects.approach,
+      features: schema.projects.features,
+      ideas: schema.projects.ideas,
+      shipping: schema.projects.shipping,
+      proves: schema.projects.proves,
+      beginnerBrief: schema.projects.beginnerBrief,
+      phaseTitle: schema.phases.title,
+      phaseSlug: schema.phases.slug,
+      phaseOrder: schema.phases.order,
+    })
+    .from(schema.projects)
+    .innerJoin(schema.phases, eq(schema.projects.phaseId, schema.phases.id))
+    .where(eq(schema.projects.id, pid))
+    .limit(1);
+  if (!rows[0]) return null;
+  const r = rows[0];
+
+  const [prog] = await db
+    .select()
+    .from(schema.projectProgress)
+    .where(
+      and(
+        eq(schema.projectProgress.userId, userId),
+        eq(schema.projectProgress.projectId, pid),
+      ),
+    )
+    .limit(1);
+
+  const msRows = await db
+    .select()
+    .from(schema.projectMilestones)
+    .where(eq(schema.projectMilestones.projectId, pid))
+    .orderBy(asc(schema.projectMilestones.order));
+
+  const msProg = await db
+    .select()
+    .from(schema.milestoneProgress)
+    .where(eq(schema.milestoneProgress.userId, userId));
+  const doneIds = new Set(
+    msProg.filter((m) => m.done).map((m) => m.milestoneId),
+  );
+
+  return {
+    id: r.id,
+    number: r.number,
+    kind: r.kind,
+    title: r.title,
+    problem: r.problem,
+    whyUseful: r.whyUseful,
+    learningGoal: r.learningGoal,
+    intuitionFocus: r.intuitionFocus,
+    approach: r.approach,
+    features: r.features,
+    ideas: r.ideas,
+    shipping: r.shipping,
+    proves: r.proves,
+    beginnerBrief: r.beginnerBrief,
+    phaseTitle: r.phaseTitle,
+    phaseSlug: r.phaseSlug,
+    phaseOrder: r.phaseOrder,
+    status: prog?.status ?? "not_started",
+    repoUrl: prog?.repoUrl ?? null,
+    demoUrl: prog?.demoUrl ?? null,
+    milestones: msRows.map((m) => ({
+      id: m.id,
+      title: m.title,
+      description: m.description,
+      done: doneIds.has(m.id),
+    })),
   };
 }
 
@@ -689,6 +806,9 @@ export async function updateTodo(
     if (todo?.linkedType === "subtopic" && todo.linkedId) {
       await propagateSubtopicStatus(userId, todo.linkedId, nextStatus);
       revalidatePath("/plan");
+    } else if (todo?.linkedType === "project" && todo.linkedId) {
+      await propagateProjectStatus(userId, todo.linkedId, nextStatus);
+      revalidatePath("/plan");
     }
   }
 
@@ -747,6 +867,58 @@ async function propagateSubtopicStatus(
       userId,
       targetStatus === "done" ? "lesson_done" : "lesson_started",
       targetStatus === "done" ? "Completed a roadmap lesson" : "Started a roadmap lesson",
+    );
+  }
+}
+
+/**
+ * Same mirror pattern as propagateSubtopicStatus but for projects. Runs when a
+ * todo linked to a project moves through its lifecycle.
+ */
+async function propagateProjectStatus(
+  userId: string,
+  projectId: string,
+  todoStatus: "todo" | "doing" | "done",
+) {
+  const targetStatus =
+    todoStatus === "done"
+      ? "done"
+      : todoStatus === "doing"
+        ? "in_progress"
+        : "not_started";
+  const [existing] = await db
+    .select()
+    .from(schema.projectProgress)
+    .where(
+      and(
+        eq(schema.projectProgress.userId, userId),
+        eq(schema.projectProgress.projectId, projectId),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    if (existing.status === targetStatus) return;
+    await db
+      .update(schema.projectProgress)
+      .set({ status: targetStatus, updatedAt: now() })
+      .where(eq(schema.projectProgress.id, existing.id));
+  } else {
+    if (targetStatus === "not_started") return;
+    await db.insert(schema.projectProgress).values({
+      id: randomUUID(),
+      userId,
+      projectId,
+      status: targetStatus,
+      updatedAt: now(),
+    });
+  }
+
+  if (targetStatus !== "not_started") {
+    await logActivity(
+      userId,
+      targetStatus === "done" ? "project_done" : "project_started",
+      targetStatus === "done" ? "Shipped a roadmap project" : "Started a roadmap project",
     );
   }
 }
