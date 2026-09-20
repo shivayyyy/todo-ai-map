@@ -241,6 +241,7 @@ export const userProfiles = pgTable("user_profiles", {
     .references(() => user.id, { onDelete: "cascade" }),
   startingPoint: text("starting_point").notNull().default("week0"),
   weeklyHours: integer("weekly_hours").notNull().default(22),
+  durationWeeks: integer("duration_weeks").notNull().default(16),
   targetDate: text("target_date"),
   startDate: text("start_date"),
   mode: text("mode").notNull().default("accelerated"),

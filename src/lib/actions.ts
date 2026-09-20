@@ -537,19 +537,91 @@ export async function updateTodo(
   if (patch.estMinutes !== undefined) set.estMinutes = patch.estMinutes;
   if (patch.dueDate !== undefined) set.dueDate = patch.dueDate || null;
   if (patch.dueTime !== undefined) set.dueTime = patch.dueTime || null;
+  let nextStatus: "todo" | "doing" | "done" | undefined;
   if (patch.status !== undefined) {
-    const st = z.enum(["todo", "doing", "done"]).parse(patch.status);
-    set.status = st;
-    set.completedAt = st === "done" ? now() : null;
+    nextStatus = z.enum(["todo", "doing", "done"]).parse(patch.status);
+    set.status = nextStatus;
+    set.completedAt = nextStatus === "done" ? now() : null;
   }
   await db
     .update(schema.todos)
     .set(set)
     .where(and(eq(schema.todos.id, tid), eq(schema.todos.userId, userId)));
-  if (patch.status === "done") {
+
+  // If this todo is linked to a roadmap subtopic, mirror the status change on
+  // the plan so the two views can't drift out of sync.
+  if (nextStatus !== undefined) {
+    const [todo] = await db
+      .select({
+        linkedType: schema.todos.linkedType,
+        linkedId: schema.todos.linkedId,
+      })
+      .from(schema.todos)
+      .where(and(eq(schema.todos.id, tid), eq(schema.todos.userId, userId)))
+      .limit(1);
+    if (todo?.linkedType === "subtopic" && todo.linkedId) {
+      await propagateSubtopicStatus(userId, todo.linkedId, nextStatus);
+      revalidatePath("/plan");
+    }
+  }
+
+  if (nextStatus === "done") {
     await logActivity(userId, "todo_done", "Completed a todo");
   }
   revalidatePath("/todo");
+}
+
+/**
+ * Mirror a linked todo's state onto its subtopic. Downgrades are allowed:
+ * un-doing the todo reverts the plan lesson so the two views stay in sync.
+ */
+async function propagateSubtopicStatus(
+  userId: string,
+  subtopicId: string,
+  todoStatus: "todo" | "doing" | "done",
+) {
+  const targetStatus =
+    todoStatus === "done"
+      ? "done"
+      : todoStatus === "doing"
+        ? "in_progress"
+        : "not_started";
+  const [existing] = await db
+    .select()
+    .from(schema.subtopicProgress)
+    .where(
+      and(
+        eq(schema.subtopicProgress.userId, userId),
+        eq(schema.subtopicProgress.subtopicId, subtopicId),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    if (existing.status === targetStatus) return;
+    await db
+      .update(schema.subtopicProgress)
+      .set({ status: targetStatus, updatedAt: now() })
+      .where(eq(schema.subtopicProgress.id, existing.id));
+  } else {
+    // Skip creating an empty "not_started" row; that's the implicit default.
+    if (targetStatus === "not_started") return;
+    await db.insert(schema.subtopicProgress).values({
+      id: randomUUID(),
+      userId,
+      subtopicId,
+      status: targetStatus,
+      updatedAt: now(),
+    });
+  }
+
+  if (targetStatus !== "not_started") {
+    await logActivity(
+      userId,
+      targetStatus === "done" ? "lesson_done" : "lesson_started",
+      targetStatus === "done" ? "Completed a roadmap lesson" : "Started a roadmap lesson",
+    );
+  }
 }
 
 export async function deleteTodo(id: string) {
@@ -575,15 +647,28 @@ export async function reorderTodo(id: string, sortOrder: number) {
 /* Profile / onboarding                                                */
 /* ------------------------------------------------------------------ */
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 const profileInput = z.object({
   startingPoint: z.enum(["week0", "week3", "week5", "week13"]).default("week0"),
-  weeklyHours: z.coerce.number().int().min(4).max(80).default(22),
-  targetDate: z.string().max(20).optional(),
-  startDate: z.string().max(20).optional(),
-  mode: z.enum(["accelerated", "original"]).default("accelerated"),
+  durationWeeks: z.coerce.number().int().min(16).max(24).default(16),
+  startDate: z
+    .string()
+    .regex(ISO_DATE, "Start date must be YYYY-MM-DD")
+    .optional(),
   prefLanguage: z.enum(["en", "hi", "any"]).default("en"),
   prefResourceType: z.string().max(30).default("any"),
 });
+
+function isoAddDays(startISO: string, days: number): string {
+  const [y, m, d] = startISO.split("-").map(Number);
+  const date = new Date(y, (m ?? 1) - 1, d ?? 1);
+  date.setDate(date.getDate() + days);
+  const yy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
 
 export async function saveProfile(input: z.infer<typeof profileInput>) {
   const userId = await uid();
@@ -593,13 +678,24 @@ export async function saveProfile(input: z.infer<typeof profileInput>) {
     .from(schema.userProfiles)
     .where(eq(schema.userProfiles.userId, userId))
     .limit(1);
+
+  // Derived fields keep existing consumers (mode-based schedule cache,
+  // weekly-hours quick-add) working without a UI for them.
+  const mode: "accelerated" | "original" =
+    data.durationWeeks < 20 ? "accelerated" : "original";
+  const weeklyHours = Math.max(4, Math.min(80, Math.round(370 / data.durationWeeks)));
+  const targetDate = data.startDate
+    ? isoAddDays(data.startDate, data.durationWeeks * 7 - 1)
+    : null;
+
   const values = {
     userId,
     startingPoint: data.startingPoint,
-    weeklyHours: data.weeklyHours,
-    targetDate: data.targetDate || null,
+    weeklyHours,
+    durationWeeks: data.durationWeeks,
+    targetDate,
     startDate: data.startDate || null,
-    mode: data.mode,
+    mode,
     prefLanguage: data.prefLanguage,
     prefResourceType: data.prefResourceType,
     onboarded: true,
