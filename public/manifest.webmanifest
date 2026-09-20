@@ -1,0 +1,50 @@
+{
+  "name": "AI Engineer Roadmap Tracker",
+  "short_name": "AI Roadmap",
+  "description": "Plan, track and complete the 16-24 week journey to AI engineering.",
+  "start_url": "/plan",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0d1a",
+  "theme_color": "#0a0d1a",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Open plan",
+      "url": "/plan",
+      "description": "Jump into today's phase"
+    },
+    {
+      "name": "Open todo",
+      "url": "/todo",
+      "description": "See today's tasks"
+    }
+  ]
+}

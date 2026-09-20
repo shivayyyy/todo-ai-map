@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Source_Serif_4, VT323 } from "next/font/google";
+import { PWARegister } from "@/components/pwa-register";
 import "./globals.css";
 
 const body = Source_Serif_4({
@@ -24,13 +25,38 @@ const display = VT323({
 export const metadata: Metadata = {
   title: "AI Engineer Roadmap Tracker",
   description:
-    "Plan, track and complete the 24-week or accelerated 16-week journey to AI engineering.",
+    "Plan, track and complete the 16-24 week journey to AI engineering.",
+  applicationName: "AI Roadmap",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "AI Roadmap",
+  },
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0a0d1a",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${body.variable} ${mono.variable} ${display.variable}`}>
-      <body className="flex min-h-full flex-col">{children}</body>
+      <body className="flex min-h-full flex-col">
+        {children}
+        <PWARegister />
+      </body>
     </html>
   );
 }
